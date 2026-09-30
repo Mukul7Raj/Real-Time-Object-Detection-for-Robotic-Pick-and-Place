@@ -112,17 +112,3 @@ USB Camera (640×480)
 ```
 
 ---
-
-## Key design decisions (interview talking points)
-
-### Why YOLOv8 nano?
-The Raspberry Pi 4 has no GPU. YOLOv8n runs in ~55 ms per frame on CPU, achieving ~18 FPS — sufficient for parts moving at conveyor speed (<15 cm/s). Larger variants (YOLOv8s/m) gave +3–4% mAP but dropped below 10 FPS.
-
-### Camera-to-robot transform
-I used a **planar homography approach**: all parts lie on a fixed-height work plane, so the 3-D problem reduces to a 2-D projective mapping. A single calibration with a checkerboard (20 poses) yielded sub-5 mm placement accuracy.
-
-### ROS integration
-The detection node publishes `geometry_msgs/PoseStamped` on `/detected_object_pose`. A MoveIt! pick-and-place pipeline subscribes, plans a collision-free trajectory, and executes it. Coordinate frames are managed via `tf2_ros.TransformListener`.
-
-### Dataset
-200 raw images of each class (bolt, nut, gear, washer) captured under varied lighting on the actual work surface. Augmented to 1 600 images using Roboflow (flip, mosaic, HSV jitter). Labelled with bounding boxes in YOLO format.
