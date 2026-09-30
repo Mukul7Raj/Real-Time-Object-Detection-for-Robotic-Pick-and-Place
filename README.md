@@ -4,6 +4,8 @@
 > Stack: **Python · OpenCV · PyTorch · YOLOv8 · ROS**
 
 ---
+<img width="677" height="412" alt="image" src="https://github.com/user-attachments/assets/381c3b43-1511-4b41-8a91-d5f968eaac6d" />
+
 
 ## What this project does
 
