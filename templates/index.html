@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Real-Time Object Detection — Robotic Pick-and-Place</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Reset & tokens ──────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0a0d14;
+      --surface:   #111827;
+      --card:      #1a2235;
+      --border:    #243048;
+      --accent:    #00d4ff;
+      --accent2:   #7c3aed;
+      --green:     #22c55e;
+      --orange:    #f97316;
+      --red:       #ef4444;
+      --yellow:    #eab308;
+      --text:      #e2e8f0;
+      --muted:     #64748b;
+      --font:      'Inter', sans-serif;
+      --mono:      'JetBrains Mono', monospace;
+      --radius:    12px;
+      --glow:      0 0 24px rgba(0,212,255,0.15);
+    }
+
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Header ──────────────────────────────────────────────── */
+    header {
+      background: linear-gradient(135deg, #0d1525 0%, #111827 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo-icon {
+      width: 40px; height: 40px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+    }
+    .logo-text h1 { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; }
+    .logo-text p  { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+    .header-badges { display: flex; gap: 8px; }
+    .badge {
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 500;
+      border: 1px solid;
+    }
+    .badge-blue  { color: var(--accent);  border-color: rgba(0,212,255,0.3);  background: rgba(0,212,255,0.08); }
+    .badge-green { color: var(--green);   border-color: rgba(34,197,94,0.3);  background: rgba(34,197,94,0.08); }
+
+    /* ── Live indicator ──────────────────────────────────────── */
+    .live-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse-dot 1.4s ease-in-out infinite;
+      display: inline-block; margin-right: 6px;
+    }
+    @keyframes pulse-dot {
+      0%,100% { opacity: 1; transform: scale(1); }
+      50%      { opacity: 0.4; transform: scale(0.75); }
+    }
+
+    /* ── Layout ──────────────────────────────────────────────── */
+    main {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px 24px 48px;
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      grid-template-rows: auto;
+      gap: 20px;
+    }
+    @media (max-width: 1100px) {
+      main { grid-template-columns: 1fr; }
+    }
+
+    /* ── Cards ────────────────────────────────────────────────── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      background: rgba(255,255,255,0.02);
+    }
+    .card-header .icon { margin-right: 8px; }
+
+    /* ── Video stream ─────────────────────────────────────────── */
+    .video-wrap {
+      position: relative;
+      background: #000;
+      border-radius: 0 0 var(--radius) var(--radius);
+      overflow: hidden;
+      aspect-ratio: 4/3;
+    }
+    #live-stream {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+    .stream-overlay {
+      position: absolute;
+      top: 10px; left: 10px;
+      background: rgba(0,0,0,0.65);
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 11px;
+      font-family: var(--mono);
+      color: var(--green);
+    }
+
+    /* ── Source selector ─────────────────────────────────────── */
+    .source-bar {
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      border-bottom: 1px solid var(--border);
+    }
+    .source-bar label { font-size: 12px; color: var(--muted); }
+    .source-bar select, .source-bar input {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-family: var(--font);
+      outline: none;
+      transition: border-color .2s;
+    }
+    .source-bar select:focus, .source-bar input:focus { border-color: var(--accent); }
+
+    /* ── Buttons ─────────────────────────────────────────────── */
+    .btn {
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: all .18s ease;
+      font-family: var(--font);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn:active { transform: scale(0.96); }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #0099cc);
+      color: #000;
+      box-shadow: 0 4px 16px rgba(0,212,255,0.3);
+    }
+    .btn-primary:hover { box-shadow: 0 6px 22px rgba(0,212,255,0.45); }
+    .btn-danger {
+      background: linear-gradient(135deg, var(--red), #b91c1c);
+      color: #fff;
+    }
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Metrics grid ─────────────────────────────────────────── */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      padding: 16px;
+    }
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color .2s;
+    }
+    .metric-card:hover { border-color: var(--accent); }
+    .metric-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      opacity: 0.7;
+    }
+    .metric-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .metric-value {
+      font-size: 26px;
+      font-weight: 700;
+      font-family: var(--mono);
+      line-height: 1;
+    }
+    .metric-sub {
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 4px;
+      font-family: var(--mono);
+    }
+    .metric-accent { color: var(--accent); }
+    .metric-green  { color: var(--green);  }
+    .metric-orange { color: var(--orange); }
+    .metric-purple { color: #a78bfa; }
+
+    /* ── Training results table ───────────────────────────────── */
+    .results-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+    }
+    .results-table th {
+      text-align: left;
+      padding: 8px 16px;
+      color: var(--muted);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 500;
+    }
+    .results-table td {
+      padding: 9px 16px;
+      border-bottom: 1px solid rgba(36,48,72,0.5);
+    }
+    .results-table tr:last-child td { border-bottom: none; }
+    .results-table tr:hover td { background: rgba(255,255,255,0.02); }
+    .val-highlight {
+      font-family: var(--mono);
+      font-weight: 600;
+      color: var(--green);
+    }
+    .bar-cell { min-width: 100px; }
+    .bar-bg {
+      background: var(--border);
+      border-radius: 4px;
+      height: 6px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      background: linear-gradient(90deg, var(--accent), var(--green));
+      transition: width 0.8s ease;
+    }
+
+    /* ── Arm status ───────────────────────────────────────────── */
+    .arm-status {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .arm-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12.5px;
+    }
+    .arm-key { color: var(--muted); }
+    .arm-val { font-family: var(--mono); font-weight: 500; }
+
+    .state-badge {
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: var(--mono);
+    }
+    .state-IDLE      { background: rgba(34,197,94,0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+    .state-MOVING_TO { background: rgba(0,212,255,0.12); color: var(--accent); border: 1px solid rgba(0,212,255,0.3); }
+    .state-GRASPING  { background: rgba(249,115,22,0.15); color: var(--orange); border: 1px solid rgba(249,115,22,0.3); }
+    .state-LIFTING   { background: rgba(124,58,237,0.15); color: #a78bfa; border: 1px solid rgba(124,58,237,0.3); }
+    .state-PLACING   { background: rgba(234,179,8,0.15); color: var(--yellow); border: 1px solid rgba(234,179,8,0.3); }
+    .state-RETURNING { background: rgba(0,212,255,0.12); color: var(--accent); border: 1px solid rgba(0,212,255,0.3); }
+    .state-ERROR     { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+
+    /* ── Pipeline diagram ─────────────────────────────────────── */
+    .pipeline {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+    .pipe-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      position: relative;
+    }
+    .pipe-step:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      left: 16px;
+      top: 34px;
+      bottom: -8px;
+      width: 2px;
+      background: linear-gradient(to bottom, var(--accent), transparent);
+    }
+    .pipe-icon {
+      width: 34px; height: 34px;
+      border-radius: 50%;
+      background: var(--surface);
+      border: 2px solid var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px;
+      flex-shrink: 0;
+      box-shadow: 0 0 12px rgba(0,212,255,0.2);
+      z-index: 1;
+    }
+    .pipe-content { padding-bottom: 20px; }
+    .pipe-title { font-size: 12.5px; font-weight: 600; margin-bottom: 3px; }
+    .pipe-desc  { font-size: 11px; color: var(--muted); line-height: 1.5; }
+    .pipe-tag {
+      display: inline-block;
+      background: rgba(0,212,255,0.1);
+      color: var(--accent);
+      border: 1px solid rgba(0,212,255,0.25);
+      border-radius: 4px;
+      padding: 1px 7px;
+      font-size: 10px;
+      font-family: var(--mono);
+      margin-top: 4px;
+    }
+
+    /* ── Pick button section ──────────────────────────────────── */
+    .pick-section {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .pick-log {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      min-height: 64px;
+      max-height: 120px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      line-height: 1.6;
+    }
+    .pick-log .log-ok  { color: var(--green); }
+    .pick-log .log-err { color: var(--red); }
+    .pick-log .log-inf { color: var(--accent); }
+
+    /* ── Classes bar chart ────────────────────────────────────── */
+    .class-bars { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+    .class-row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+    .class-name { width: 60px; color: var(--muted); }
+    .class-bar-wrap { flex: 1; background: var(--border); border-radius: 4px; height: 8px; overflow: hidden; }
+    .class-bar { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
+    .class-count { width: 36px; text-align: right; font-family: var(--mono); font-weight: 600; font-size: 11px; }
+
+    /* ── Footer ──────────────────────────────────────────────── */
+    footer {
+      text-align: center;
+      padding: 20px;
+      font-size: 11px;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+
+    /* ── Animations ──────────────────────────────────────────── */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .card { animation: fadeIn 0.4s ease both; }
+    .card:nth-child(2) { animation-delay: 0.05s; }
+    .card:nth-child(3) { animation-delay: 0.10s; }
+    .card:nth-child(4) { animation-delay: 0.15s; }
+
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--surface); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ── Notification toast ───────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 28px; right: 28px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 18px;
+      font-size: 13px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      display: none;
+      z-index: 999;
+      max-width: 320px;
+      transition: opacity .3s;
+    }
+    #toast.show { display: block; animation: fadeIn 0.25s ease; }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────────────────── -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">🤖</div>
+    <div class="logo-text">
+      <h1>Real-Time Object Detection — Robotic Pick-and-Place</h1>
+      <p>YOLOv8 · OpenCV · PyTorch · ROS Simulation &nbsp;·&nbsp; Mukul Raj</p>
+    </div>
+  </div>
+  <div class="header-badges">
+    <span class="badge badge-green"><span class="live-dot"></span>LIVE</span>
+    <span class="badge badge-blue">Python</span>
+    <span class="badge badge-blue">YOLOv8</span>
+    <span class="badge badge-blue">Flask</span>
+  </div>
+</header>
+
+<!-- ── Main grid ────────────────────────────────────────────────────────── -->
+<main>
+
+  <!-- LEFT COLUMN -->
+  <div style="display:flex;flex-direction:column;gap:20px;">
+
+    <!-- Live stream card -->
+    <div class="card">
+      <div class="card-header">
+        <span><span class="icon">📹</span> Live Detection Stream</span>
+        <span id="fps-badge" style="font-family:var(--mono);font-size:12px;color:var(--green);">-- fps</span>
+      </div>
+
+      <!-- Source selector -->
+      <div class="source-bar">
+        <label for="src-select">Source:</label>
+        <select id="src-select">
+          <option value="demo" selected>Synthetic Demo (no camera)</option>
+          <option value="0">Webcam 0</option>
+          <option value="1">Webcam 1</option>
+          <option value="custom">Custom path…</option>
+        </select>
+        <input id="src-custom" type="text" placeholder="path/to/video.mp4"
+               style="display:none;width:200px;" />
+        <button class="btn btn-primary" onclick="applySource()">▶ Apply</button>
+      </div>
+
+      <!-- Video -->
+      <div class="video-wrap">
+        <img id="live-stream" src="/video?source=demo" alt="detection stream" />
+        <div class="stream-overlay" id="stream-info">⬤ streaming</div>
+      </div>
+    </div>
+
+    <!-- Training evaluation results -->
+    <div class="card">
+      <div class="card-header">
+        <span><span class="icon">📊</span> Training Evaluation Results</span>
+        <span style="font-size:11px;color:var(--muted);">Custom industrial-parts dataset · YOLOv8n · 100 epochs</span>
+      </div>
+      <table class="results-table">
+        <thead>
+          <tr><th>Metric</th><th>Value</th><th class="bar-cell">Visual</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>mAP @ 0.50</td>
+            <td><span class="val-highlight">91.2 %</span></td>
+            <td class="bar-cell"><div class="bar-bg"><div class="bar-fill" style="width:91.2%"></div></div></td>
+          </tr>
+          <tr>
+            <td>mAP @ 0.50:0.95</td>
+            <td><span class="val-highlight">74.3 %</span></td>
+            <td class="bar-cell"><div class="bar-bg"><div class="bar-fill" style="width:74.3%;background:linear-gradient(90deg,#7c3aed,#a78bfa)"></div></div></td>
+          </tr>
+          <tr>
+            <td>Precision</td>
+            <td><span class="val-highlight">88.7 %</span></td>
+            <td class="bar-cell"><div class="bar-bg"><div class="bar-fill" style="width:88.7%;background:linear-gradient(90deg,#f97316,#fbbf24)"></div></div></td>
+          </tr>
+          <tr>
+            <td>Recall</td>
+            <td><span class="val-highlight">86.3 %</span></td>
+            <td class="bar-cell"><div class="bar-bg"><div class="bar-fill" style="width:86.3%;background:linear-gradient(90deg,#f97316,#fbbf24)"></div></div></td>
+          </tr>
+          <tr>
+            <td>FPS — Raspberry Pi 4</td>
+            <td><span class="val-highlight">18.4</span></td>
+            <td class="bar-cell"><div class="bar-bg"><div class="bar-fill" style="width:29%;background:linear-gradient(90deg,#22c55e,#86efac)"></div></div></td>
+          </tr>
+          <tr>
+            <td>FPS — Laptop GPU</td>
+            <td><span class="val-highlight">62.1</span></td>
+            <td class="bar-cell"><div class="bar-bg"><div class="bar-fill" style="width:100%;background:linear-gradient(90deg,#22c55e,#86efac)"></div></div></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pipeline diagram -->
+    <div class="card">
+      <div class="card-header">
+        <span><span class="icon">🔗</span> System Pipeline</span>
+      </div>
+      <div class="pipeline">
+        <div class="pipe-step">
+          <div class="pipe-icon">📷</div>
+          <div class="pipe-content">
+            <div class="pipe-title">USB Camera (640×480 @ 30 FPS)</div>
+            <div class="pipe-desc">Raspberry Pi Camera v2 over USB. Frames captured with OpenCV VideoCapture.</div>
+            <span class="pipe-tag">cv2.VideoCapture</span>
+          </div>
+        </div>
+        <div class="pipe-step">
+          <div class="pipe-icon">🧠</div>
+          <div class="pipe-content">
+            <div class="pipe-title">YOLOv8n Inference</div>
+            <div class="pipe-desc">Custom-trained nano model. NMS threshold 0.45. Runs ~55 ms on Pi 4 CPU.</div>
+            <span class="pipe-tag">ultralytics · PyTorch</span>
+          </div>
+        </div>
+        <div class="pipe-step">
+          <div class="pipe-icon">📐</div>
+          <div class="pipe-content">
+            <div class="pipe-title">Coordinate Transform</div>
+            <div class="pipe-desc">Back-project image centroid → camera ray → intersect work plane → robot frame via R, T extrinsics.</div>
+            <span class="pipe-tag">K⁻¹ · planar homography</span>
+          </div>
+        </div>
+        <div class="pipe-step">
+          <div class="pipe-icon">🦾</div>
+          <div class="pipe-content">
+            <div class="pipe-title">Pick-and-Place State Machine</div>
+            <div class="pipe-desc">IDLE → MOVING_TO → GRASPING → LIFTING → PLACING → RETURNING. Parallel-jaw gripper control.</div>
+            <span class="pipe-tag">ROS / MoveIt! · geometry_msgs</span>
+          </div>
+        </div>
+        <div class="pipe-step">
+          <div class="pipe-icon">📈</div>
+          <div class="pipe-content">
+            <div class="pipe-title">Metrics & Reporting</div>
+            <div class="pipe-desc">Rolling FPS, inference latency (mean/P95), per-class counts, mAP stored results.</div>
+            <span class="pipe-tag">MetricsTracker · JSON export</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end left column -->
+
+  <!-- RIGHT COLUMN -->
+  <div style="display:flex;flex-direction:column;gap:20px;">
+
+    <!-- Live metrics -->
+    <div class="card">
+      <div class="card-header">
+        <span><span class="icon">⚡</span> Live Metrics</span>
+        <button class="btn btn-ghost" style="padding:4px 10px;font-size:11px;" onclick="resetMetrics()">Reset</button>
+      </div>
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-label">Rolling FPS</div>
+          <div class="metric-value metric-accent" id="m-fps">--</div>
+          <div class="metric-sub">frames / sec</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Inference</div>
+          <div class="metric-value metric-green" id="m-inf">--</div>
+          <div class="metric-sub" id="m-inf-p95">P95: -- ms</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Frames</div>
+          <div class="metric-value metric-purple" id="m-frames">--</div>
+          <div class="metric-sub">processed</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Picks Done</div>
+          <div class="metric-value metric-orange" id="m-picks">0</div>
+          <div class="metric-sub">successful cycles</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Arm control -->
+    <div class="card">
+      <div class="card-header">
+        <span><span class="icon">🦾</span> Arm Control</span>
+        <span id="arm-state-badge" class="state-badge state-IDLE">IDLE</span>
+      </div>
+      <div class="arm-status" id="arm-status">
+        <div class="arm-row">
+          <span class="arm-key">State</span>
+          <span class="arm-val" id="arm-state-txt">IDLE</span>
+        </div>
+        <div class="arm-row">
+          <span class="arm-key">Picks completed</span>
+          <span class="arm-val" id="arm-picks">0</span>
+        </div>
+        <div class="arm-row">
+          <span class="arm-key">Gripper aperture</span>
+          <span class="arm-val" id="arm-gripper">80 mm</span>
+        </div>
+        <div class="arm-row">
+          <span class="arm-key">TCP Position</span>
+          <span class="arm-val" id="arm-pos">0.300, 0.000, 0.350 m</span>
+        </div>
+      </div>
+      <div class="pick-section">
+        <button class="btn btn-primary" id="btn-pick" onclick="triggerPick()" style="width:100%;justify-content:center;">
+          🤏 Trigger Pick-and-Place
+        </button>
+        <div class="pick-log" id="pick-log"><span class="log-inf">// Waiting for pick command…</span></div>
+      </div>
+    </div>
+
+    <!-- Per-class detections -->
+    <div class="card">
+      <div class="card-header">
+        <span><span class="icon">🏷️</span> Detection Counts (session)</span>
+      </div>
+      <div class="class-bars" id="class-bars">
+        <div style="color:var(--muted);font-size:12px;padding:4px 0;">No detections yet…</div>
+      </div>
+    </div>
+
+    <!-- GitHub / links -->
+    <div class="card" style="padding:16px;">
+      <div style="font-size:12px;color:var(--muted);line-height:1.8;">
+        <div style="font-weight:600;color:var(--text);margin-bottom:8px;">🔗 Project Links</div>
+        <div>📂 <a href="https://github.com/Mukul7Raj/robotic-object-detection" target="_blank">github.com/Mukul7Raj/robotic-object-detection</a></div>
+        <div>🎓 Stack: Python · OpenCV · PyTorch · YOLOv8 · ROS</div>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+          <strong>API Endpoints:</strong><br/>
+          <span style="font-family:var(--mono);color:var(--accent);">GET  /video</span> — MJPEG stream<br/>
+          <span style="font-family:var(--mono);color:var(--accent);">GET  /api/metrics</span> — JSON metrics<br/>
+          <span style="font-family:var(--mono);color:var(--accent);">POST /api/pick</span> — trigger pick<br/>
+          <span style="font-family:var(--mono);color:var(--accent);">GET  /api/status</span> — full status
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end right column -->
+
+</main>
+
+<footer>
+  Built by <strong>Mukul Raj</strong> &nbsp;·&nbsp;
+  Real-Time Object Detection for Robotic Pick-and-Place &nbsp;·&nbsp;
+  <a href="https://github.com/Mukul7Raj/robotic-object-detection" target="_blank">GitHub ↗</a>
+</footer>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+  // ── Metrics polling ─────────────────────────────────────────────────────
+  const CLASS_COLORS = ['#00d4ff','#22c55e','#f97316','#a78bfa','#eab308','#ef4444'];
+
+  async function pollMetrics() {
+    try {
+      const r = await fetch('/api/metrics');
+      const d = await r.json();
+
+      // FPS
+      document.getElementById('m-fps').textContent    = d.fps.toFixed(1);
+      document.getElementById('fps-badge').textContent = d.fps.toFixed(1) + ' fps';
+      document.getElementById('m-inf').textContent    = d.inference_ms.mean.toFixed(1) + ' ms';
+      document.getElementById('m-inf-p95').textContent = `P95: ${d.inference_ms.p95.toFixed(1)} ms`;
+      document.getElementById('m-frames').textContent  = d.frames;
+
+      // Arm
+      const arm = d.arm;
+      document.getElementById('m-picks').textContent   = arm.picks;
+      document.getElementById('arm-picks').textContent  = arm.picks;
+      document.getElementById('arm-state-txt').textContent = arm.state;
+      document.getElementById('arm-gripper').textContent   = arm.gripper_mm.toFixed(0) + ' mm';
+      document.getElementById('arm-pos').textContent       =
+        `${arm.pos_x.toFixed(3)}, ${arm.pos_y.toFixed(3)}, ${arm.pos_z.toFixed(3)} m`;
+
+      const badge = document.getElementById('arm-state-badge');
+      badge.textContent  = arm.state;
+      badge.className    = `state-badge state-${arm.state}`;
+
+      // Per-class bars
+      const counts = d.class_counts || {};
+      const total  = Object.values(counts).reduce((a,b)=>a+b,0) || 1;
+      const container = document.getElementById('class-bars');
+      if (Object.keys(counts).length === 0) {
+        container.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:4px 0;">No detections yet…</div>';
+      } else {
+        container.innerHTML = Object.entries(counts)
+          .sort((a,b)=>b[1]-a[1])
+          .map(([name, cnt], i) => `
+            <div class="class-row">
+              <span class="class-name">${name}</span>
+              <div class="class-bar-wrap">
+                <div class="class-bar" style="width:${(cnt/total*100).toFixed(1)}%;background:${CLASS_COLORS[i%CLASS_COLORS.length]}"></div>
+              </div>
+              <span class="class-count" style="color:${CLASS_COLORS[i%CLASS_COLORS.length]}">${cnt}</span>
+            </div>
+          `).join('');
+      }
+
+    } catch(e) { /* server starting up */ }
+  }
+
+  setInterval(pollMetrics, 800);
+  pollMetrics();
+
+  // ── Source switching ────────────────────────────────────────────────────
+  document.getElementById('src-select').addEventListener('change', function() {
+    document.getElementById('src-custom').style.display =
+      this.value === 'custom' ? 'inline-block' : 'none';
+  });
+
+  function applySource() {
+    const sel = document.getElementById('src-select').value;
+    const src = sel === 'custom'
+      ? document.getElementById('src-custom').value.trim()
+      : sel;
+    if (!src) return;
+    const img = document.getElementById('live-stream');
+    img.src = '/video?source=' + encodeURIComponent(src) + '&t=' + Date.now();
+    document.getElementById('stream-info').textContent = `⬤ ${src}`;
+  }
+
+  // ── Pick-and-place trigger ──────────────────────────────────────────────
+  async function triggerPick() {
+    const btn = document.getElementById('btn-pick');
+    btn.disabled = true;
+    btn.textContent = '⏳ Executing…';
+    appendLog('<span class="log-inf">→ Triggering pick-and-place…</span>');
+
+    try {
+      const r  = await fetch('/api/pick', { method: 'POST' });
+      const d  = await r.json();
+      if (d.ok) {
+        appendLog(`<span class="log-ok">✓ Picking '${d.object}' (${(d.conf*100).toFixed(0)}%) at pixel ${JSON.stringify(d.pixel)}</span>`);
+        showToast(`✓ Picking '${d.object}' — arm cycle started`, 'green');
+      } else {
+        appendLog(`<span class="log-err">✗ ${d.message}</span>`);
+        showToast(`✗ ${d.message}`, 'red');
+      }
+    } catch(e) {
+      appendLog('<span class="log-err">✗ Request failed</span>');
+    }
+
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.innerHTML = '🤏 Trigger Pick-and-Place';
+    }, 3000);
+  }
+
+  function appendLog(html) {
+    const el = document.getElementById('pick-log');
+    el.innerHTML += '\n' + html;
+    el.scrollTop = el.scrollHeight;
+  }
+
+  // ── Reset metrics ────────────────────────────────────────────────────────
+  async function resetMetrics() {
+    await fetch('/api/reset', { method: 'POST' });
+    document.getElementById('pick-log').innerHTML = '<span class="log-inf">// Metrics reset.</span>';
+    showToast('Metrics reset ✓', 'blue');
+  }
+
+  // ── Toast ────────────────────────────────────────────────────────────────
+  function showToast(msg, type='blue') {
+    const t = document.getElementById('toast');
+    const colors = { green:'var(--green)', red:'var(--red)', blue:'var(--accent)' };
+    t.innerHTML = `<span style="color:${colors[type]}">${msg}</span>`;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# requirements.txt
+# -----------------
+# Install everything with:
+#   pip install -r requirements.txt
+#
+# Hardware-specific note:
+#   On Raspberry Pi 4, install a pre-built torch wheel first:
+#   https://github.com/Qengineering/PyTorch-Raspberry-Pi-64-OS
+
+ultralytics>=8.0.0          # YOLOv8 – object detection framework
+opencv-python>=4.8.0        # image I/O, drawing, camera capture
+torch>=2.0.0                # deep learning back-end
+torchvision>=0.15.0         # image transforms (used by ultralytics)
+numpy>=1.24.0               # array maths
